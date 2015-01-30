@@ -1,118 +1,312 @@
-﻿- title : FsReveal
-- description : Introduction to FsReveal
-- author : Karlkim Suwanmongkol
+- title : DDD CQRS/ES
+- description : Introduction to CQRS/ES
+- author : Alexander Prooks 
 - theme : night
 - transition : default
 
 ***
 
-### What is FsReveal?
+### (Functional) Architecture Patterns
 
-- Generates [reveal.js](http://lab.hakim.se/reveal-js/#/) presentation from [markdown](http://daringfireball.net/projects/markdown/)
-- Utilizes [FSharp.Formatting](https://github.com/tpetricek/FSharp.Formatting) for markdown parsing
 
 ***
+### Domain Driven Design
 
-### Reveal.js
+- проблемно-ориентированное проектирование
+- Набор принципов для упрощения реализации сложной предметной области
 
-- A framework for easily creating beautiful presentations using HTML.
+---
+#### DDD
 
+- **Ubiquous language ** - общий язык
+- Контекст каждой подсистемы, со своим языком
+- Aggregate root, вместо частных сущностей
 
-> **Atwood's Law**: any application that can be written in JavaScript, will eventually be written in JavaScript.
+[и много чего ещё ](http://en.wikipedia.org/wiki/Domain-driven_design)
 
-***
+---
+#### FROM
 
-### FSharp.Formatting
+![Big Ball of Mud](./images/bbm.png "Big Ball of Mud")
 
-- F# tools for generating documentation (Markdown processor and F# code formatter).
-- It parses markdown and F# script file and generates HTML or PDF.
-- Code syntax highlighting support.
-- It also evaluates your F# code and produce tooltips.
-
-***
-
-### Syntax Highlighting
-
-#### F# (with tooltips)
-
-    let a = 5
-    let factorial x = [1..x] |> List.reduce (*)
-    let c = factorial a
 
 ---
 
-#### C#
+#### TO
+
+
+![Domain](./images/organized.png "Organized roots")
+
+
+***
+
+### CQRS
+
+- Command Query Responsibility Segregation
+- Разделение ответсвенности между командами и запросами
+
+- **Command** - запрос поменять состояние
+- **Query** - запрос предоставить данные
+
+---
+
+#### Самый простой CQRS
+
+- Бёрем REST
+- GET = query
+- POST, PUT, DELETE etc меняет, но отдает только OK || ERROR
+
+
+---
+
+#### Зачем городить дальше?
+
+- Потеря семантики 
+- PUT /DOCUMENT/1  ????? подписать, закрыть, отменить?
+
+---
+
+#### CQRS + DDD
+
+- Даем **Командам** значимые имена: Create, SignUp, UpdateProfile etc
+- Получатели ответсвенны за обработку уже внутри модели
+
+- (Нас не волнует, но) Простой Scale Out 
+
+= Profit!
+
+
+Amazon API
+
+    https://ec2.amazonaws.com/?Action=AttachVolume
+    &VolumeId=vol-4d826724
+    &InstanceId=i-6058a509
+    &Device=/dev/sdh
+    &AUTHPARAMS
+
+
+---
+
+#### Basic CQRS
+
+![](./images/cqrs-basic.png)
+
+---
+
+#### Complex Domain
+
+![](./images/AR-communications.png)
+
+
+---
+
+
+#### C# псевдокод
 
     [lang=cs]
-    using System;
+    public class UpdateEmail { public string Email {get;set;} }
 
-    class Program
-    {
-        static void Main()
-        {
-            Console.WriteLine("Hello, world!");
+    public class UserProfile{
+
+        public void Handle(UpdateEmail command){
+
+            var profile = UserRepository.Load();
+            profile.Email = command.Email;
+
+            UserRepository.Save(this);
+            Bus.Publish(new EmailUpdated(profile));  //publish event            
         }
     }
 
----
 
-#### JavaScript
-
-    [lang=js]
-    function copyWithEvaluation(iElem, elem) {
-        return function (obj) {
-            var newObj = {};
-            for (var p in obj) {
-                var v = obj[p];
-                if (typeof v === "function") {
-                    v = v(iElem, elem);
-                }
-                newObj[p] = v;
-            }
-            if (!newObj.exactTiming) {
-                newObj.delay += exports._libraryDelay;
-            }
-            return newObj;
-        };
+    public class Notifier{
+        public void Handle(EmailUpdated userProfile){
+            MailService.SendEmailConfirmation(
+                userProfile.Email );
+        }
     }
+***
+
+### ES
+
+![](./images/eventStore.png)
 
 
 ---
 
-#### Haskell
- 
-    [lang=haskell]
-    recur_count k = 1 : 1 : zipWith recurAdd (recur_count k) (tail (recur_count k))
-            where recurAdd x y = k * x + y
+### Core
 
-    main = do
-      argv <- getArgs
-      inputFile <- openFile (head argv) ReadMode
-      line <- hGetLine inputFile
-      let [n,k] = map read (words line)
-      printf "%d\n" ((recur_count k) !! (n-1))
+    [lang=fs]
+    //HandleCommand:
+    handler:  Command -> State ->  Event
 
-*code from [NashFP/rosalind](https://github.com/NashFP/rosalind/blob/master/mark_wutka%2Bhaskell/FIB/fib_ziplist.hs)*
+    //UpdateState
+    apply: Event -> State -> State
+
+    type State = {
+        Name:string //всё, что меняется
+    }
+    with
+        static member Zero = {Name=""}
 
 ---
 
-### SQL
 
-    [lang=sql]
-    select *
-    from
-    (select 1 as Id union all select 2 union all select 3) as X
-    where Id in (@Ids1, @Ids2, @Ids3)
+#### Customer
 
-*sql from [Dapper](https://code.google.com/p/dapper-dot-net/)*
+    [lang=fs]
+    type State = {
+        name : string
+        email: string
+    }
+    with 
+        static member Zero = {name=""; email=""}
+
+
+    type Commands = 
+    | Create of string*string
+    | UpdateEmail of string
+    // | UpdateName of string 
+    // | ShipLicense of string*int 
+    // | etc
+
+---
+#### Handler
+
+
+    [lang=fs]
+    type Events = 
+    | Created of string*string    
+    | UpdatedEmail of string
+
+    let exec state = 
+        function 
+        | Create (name, email) ->
+            if state<> State.Zero then failwith "Not new"
+            Created(name,email)
+        | UpdateEmail email->
+            if state = State.Zero then failwith "Customer is not yet created"
+            UpdatedEmail(email)
+---
+
+#### Handling in Infrastructure
+
+    [lang=fs]
+    // load загрузка событий
+    // commit сохранение     
+    let handler load commit (id, command) =
+        let history = load id
+        let aggregate = MAGIC history
+        let event = exec aggregate command
+        commit id event
+---
+#### !!MAGIC!!
+
+    [lang=fs]
+    let apply state = 
+        function
+        | Created (name,email) -> 
+            { state with State.name = name; State.email = email}
+        | UpdatedEmail email ->
+            { state with State.email = email}
+
+    let customer = Created("tester", "test@ex.com")
+                   |>apply State.Zero 
+
+    let ver2     = UpdatedEmail("super_test@ex.com")
+                   |> apply customer
+---
+#### MOARRR
+
+    [lang=fs]
+    let history = [
+                    Created("tester", "test@ex.com")
+                    UpdatedEmail("super_test@ex.com")]
+
+    let state = history |> Seq.fold apply State.Zero
+
+    (*
+    val state : State = {name = "tester";
+                     email = "super_test@ex.com";}
+    *)
 
 ***
 
-**Bayes' Rule in LaTeX**
+![](./images/projections-bank.png)
 
-$ \Pr(A|B)=\frac{\Pr(B|A)\Pr(A)}{\Pr(B|A)\Pr(A)+\Pr(B|\neg A)\Pr(\neg A)} $
+---
+
+    [lang=fs]
+    let totalProjection prev event = 
+        match event with
+        | Withdrawal amount -> prev - amount
+        | Deposit amout -> prev + amount
+
+    let historyProjection prev = 
+        match event with
+        | Withdrawal amount -> prev @ "Withdrawn " + amount
+        | Deposit amout -> prev @ "Deposit " + amount
+
+---
+
+
+![](./images/es-whole-picture.png)
+
 
 ***
+
+### Profit?!
+
+- История неменяемая
+- Легко добавить новые проекции
+- Нет проблем с оптимизациями
+- Если накосячили в продакшене - просто перестраиваем заново
+- Нормализованная БД = сложная проекция
+- Легко повторить любой баг
+
+---
+### Cons
+
+- Нельзя хакнуть в продакшене
+- Система компенсаций для неверных ивентов
+- Тяжело воткнуть
+
+
+***
+
+### Resources
+
+- Greg Young || Rinat Abdulling
+
+- http://abdullin.com/post/event-sourcing-projections/
+- http://abdullin.com/post/event-sourcing-aggregates/
+
+- http://gorodinski.com/blog/2013/02/17/domain-driven-design-with-fsharp-and-eventstore/
+
+- https://github.com/eulerfx/DDDInventoryItemFSharp
+- https://github.com/aprooks/eventsourcing :)
+
+---
+### Infrastructure
+
+- https://github.com/NEventStore/NEventStore
+    - (no) Sql persistence adapter
+    
+- http://geteventstore.com/
+    - JS projections
+    - HTTP && .Net API
+
+
+
+***
+
+###Example serviceStack
+
+
+
+
+***
+
 
 ### The Reality of a Developer's Life 
 
