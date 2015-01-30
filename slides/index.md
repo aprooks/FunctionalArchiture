@@ -129,7 +129,7 @@ Amazon API
 
 ### ES
 
-![](./images/eventStore.png)
+![](./images/EventStore.png)
 
 
 ---
